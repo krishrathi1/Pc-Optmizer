@@ -44,6 +44,27 @@
         </article>
       </section>
 
+      <section class="optimizer-grid">
+        <article class="panel">
+          <h2>Optimizer Engine</h2>
+          <p>Automation layer for service tuning, privacy hardening, startup optimization, debloat, registry, and network actions.</p>
+          <div class="button-row">
+            <button id="simulateRecommended" class="btn btn-secondary">Simulate Recommended</button>
+            <button id="applyRecommended" class="btn btn-primary">Apply Recommended</button>
+            <button id="applySelected" class="btn btn-danger">Apply Selected</button>
+          </div>
+          <div class="panel-meta" id="optimizerMeta">Loading optimization catalog...</div>
+          <div id="optimizerActions" class="optimizer-actions"></div>
+        </article>
+
+        <article class="result-panel">
+          <h3>Optimization Insights</h3>
+          <div id="optimizerInsights" class="list"></div>
+          <h3>Execution Results</h3>
+          <div id="optimizerResults" class="list"></div>
+        </article>
+      </section>
+
       <section class="result-grid">
         <article class="result-panel">
           <h3>Junk Breakdown</h3>

@@ -9,6 +9,201 @@ const POWER_SHELL = process.env.ComSpec
   ? "powershell.exe"
   : "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
+const OPTIMIZATION_CATEGORIES = [
+  { id: "services", title: "Service & Process Optimization" },
+  { id: "privacy", title: "Privacy & Telemetry Isolation" },
+  { id: "startup", title: "Startup Optimization" },
+  { id: "debloat", title: "Debloat & App Pruning" },
+  { id: "cleanup", title: "Disk & Cache Cleaning" },
+  { id: "registry", title: "Registry & UI Responsiveness" },
+  { id: "network", title: "Network Optimization" },
+  { id: "features", title: "System Feature Control" },
+];
+
+const OPTIMIZATION_ACTIONS = [
+  {
+    id: "disable_diagtrack",
+    category: "services",
+    title: "Disable DiagTrack Telemetry Service",
+    description: "Stops and disables the Connected User Experiences and Telemetry service.",
+    impact: "high",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Stop-Service -Name 'DiagTrack' -ErrorAction SilentlyContinue; Set-Service -Name 'DiagTrack' -StartupType Disabled -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "set_sysmain_manual",
+    category: "services",
+    title: "Set SysMain to Manual",
+    description: "Reduces aggressive preloading behavior on some systems.",
+    impact: "medium",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Set-Service -Name 'SysMain' -StartupType Manual -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "set_print_spooler_manual",
+    category: "services",
+    title: "Set Print Spooler to Manual",
+    description: "Avoids loading print service at boot when not needed.",
+    impact: "low",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Set-Service -Name 'Spooler' -StartupType Manual -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "disable_telemetry_policy",
+    category: "privacy",
+    title: "Set Telemetry Policy to Minimum",
+    description: "Writes policy keys to reduce diagnostic data collection.",
+    impact: "high",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection' -Name 'AllowTelemetry' -Type DWord -Value 0",
+  },
+  {
+    id: "disable_tailored_experiences",
+    category: "privacy",
+    title: "Disable Tailored Experiences",
+    description: "Turns off personalized suggestions based on diagnostics.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Privacy' -Name 'TailoredExperiencesWithDiagnosticDataEnabled' -Type DWord -Value 0",
+  },
+  {
+    id: "disable_background_apps",
+    category: "privacy",
+    title: "Disable Background Apps Global Toggle",
+    description: "Prevents Store apps from running in background by default.",
+    impact: "high",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications' -Name 'GlobalUserDisabled' -Type DWord -Value 1",
+  },
+  {
+    id: "disable_startup_delay",
+    category: "startup",
+    title: "Remove Startup Delay",
+    description: "Disables Explorer startup delay for desktop apps.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize' -Name 'StartupDelayInMSec' -Type DWord -Value 0",
+  },
+  {
+    id: "debloat_common_uwp",
+    category: "debloat",
+    title: "Remove Common Consumer UWP Apps",
+    description: "Removes common Xbox/consumer app packages for current user.",
+    impact: "high",
+    risk: "high",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "$apps=@('Microsoft.XboxApp','Microsoft.XboxGamingOverlay','Microsoft.XboxGameCallableUI','Microsoft.XboxSpeechToTextOverlay','Microsoft.ZuneMusic','Microsoft.ZuneVideo','Microsoft.BingNews','Microsoft.GetHelp','Microsoft.Getstarted'); foreach($a in $apps){Get-AppxPackage -Name $a -AllUsers -ErrorAction SilentlyContinue | Remove-AppxPackage -AllUsers -ErrorAction SilentlyContinue}",
+    timeoutMs: 120000,
+  },
+  {
+    id: "cleanup_temp_and_caches",
+    category: "cleanup",
+    title: "Clean Temp and App Caches",
+    description: "Clears temp files and app cache directories used by this app scanner.",
+    impact: "high",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "internal",
+    internal: "cleanup_temp_and_caches",
+  },
+  {
+    id: "remove_empty_folders",
+    category: "cleanup",
+    title: "Delete Empty Folders",
+    description: "Removes empty folders discovered across common project roots.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "internal",
+    internal: "remove_empty_folders",
+  },
+  {
+    id: "remove_menu_delay",
+    category: "registry",
+    title: "Remove Menu Show Delay",
+    description: "Sets MenuShowDelay to 0 for snappier menu response.",
+    impact: "low",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name 'MenuShowDelay' -Value '0' -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "clean_broken_path_entries",
+    category: "registry",
+    title: "Clean Broken PATH Entries",
+    description: "Removes non-existent directories from user and machine PATH variables.",
+    impact: "medium",
+    risk: "high",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "$scopes=@('User','Machine'); foreach($scope in $scopes){$parts=[Environment]::GetEnvironmentVariable('Path',$scope) -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }; $valid=$parts | Where-Object { ($_ -match '^%') -or (Test-Path $_) } | Select-Object -Unique; [Environment]::SetEnvironmentVariable('Path',($valid -join ';'),$scope)}",
+  },
+  {
+    id: "flush_dns",
+    category: "network",
+    title: "Flush DNS Cache",
+    description: "Clears local DNS resolver cache.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Clear-DnsClientCache; ipconfig /flushdns | Out-Null",
+  },
+  {
+    id: "set_cloudflare_dns",
+    category: "network",
+    title: "Set Cloudflare DNS (IPv4)",
+    description: "Sets active IPv4 interfaces to 1.1.1.1 and 1.0.0.1.",
+    impact: "medium",
+    risk: "high",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|vEthernet' } | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ServerAddresses @('1.1.1.1','1.0.0.1') -ErrorAction SilentlyContinue }",
+  },
+  {
+    id: "disable_windows_copilot",
+    category: "features",
+    title: "Disable Windows Copilot",
+    description: "Applies user policy key to disable Copilot surface.",
+    impact: "low",
+    risk: "low",
+    recommended: false,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "New-Item -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot' -Name 'TurnOffWindowsCopilot' -Type DWord -Value 1",
+  },
+];
+
 function runPowerShell(command, timeoutMs = 20000) {
   return new Promise((resolve) => {
     execFile(
@@ -353,6 +548,27 @@ async function scanEmptyFolders() {
   };
 }
 
+async function removeEmptyFolders() {
+  const scan = await scanEmptyFolders();
+  let deleted = 0;
+  let failed = 0;
+  for (const dir of scan.emptyFolders) {
+    try {
+      await fs.rmdir(dir);
+      deleted += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return {
+    scannedAt: scan.scannedAt,
+    totalFound: scan.totalFound,
+    deleted,
+    failed,
+  };
+}
+
 function toNumber(value) {
   const asNum = Number(value);
   return Number.isFinite(asNum) ? asNum : null;
@@ -663,6 +879,161 @@ async function getOverview() {
   };
 }
 
+function getOptimizationCatalog() {
+  const grouped = OPTIMIZATION_CATEGORIES.map((category) => ({
+    ...category,
+    actions: OPTIMIZATION_ACTIONS.filter((action) => action.category === category.id),
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    categories: grouped,
+    safeProfileActionIds: OPTIMIZATION_ACTIONS.filter((action) => action.recommended).map((action) => action.id),
+  };
+}
+
+async function getStartupItems() {
+  const cmd = "Get-CimInstance Win32_StartupCommand | Select-Object Name,Command,Location,User | ConvertTo-Json -Depth 3";
+  const result = await runPowerShell(cmd, 12000);
+  if (!result.ok) {
+    return { totalCount: 0, items: [] };
+  }
+  const rows = parseJsonOutput(result.stdout);
+  return {
+    totalCount: rows.length,
+    items: rows.slice(0, 40).map((row) => ({
+      name: row.Name || "Unknown",
+      command: row.Command || "",
+      location: row.Location || "",
+      user: row.User || "",
+    })),
+  };
+}
+
+async function getServiceStates() {
+  const cmd = "Get-Service -Name 'DiagTrack','SysMain','Spooler','bthserv','wuauserv' -ErrorAction SilentlyContinue | Select-Object Name,Status,StartType | ConvertTo-Json -Depth 3";
+  const result = await runPowerShell(cmd, 8000);
+  if (!result.ok) {
+    return [];
+  }
+  const rows = parseJsonOutput(result.stdout);
+  return rows.map((row) => ({
+    name: row.Name,
+    status: row.Status,
+    startType: row.StartType,
+  }));
+}
+
+async function getOptimizationInsights() {
+  const [admin, startup, services, junk] = await Promise.all([
+    isAdmin(),
+    getStartupItems(),
+    getServiceStates(),
+    scanJunk(),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    admin,
+    startup,
+    services,
+    junkSummary: {
+      totalBytes: junk.totalBytes,
+      tempBytes: junk.temp.totalBytes,
+      appCacheBytes: junk.appCaches.totalBytes,
+      devJunkBytes: junk.devJunk.totalBytes,
+    },
+  };
+}
+
+async function executeOptimizationAction(action) {
+  if (action.kind === "internal") {
+    if (action.internal === "cleanup_temp_and_caches") {
+      const report = await cleanupSelected({ includeTemp: true, includeAppCaches: true });
+      return {
+        ok: true,
+        summary: `Deleted ${report.totals.deletedEntries} entries (${report.totals.deletedBytes} bytes).`,
+      };
+    }
+    if (action.internal === "remove_empty_folders") {
+      const report = await removeEmptyFolders();
+      return {
+        ok: true,
+        summary: `Removed ${report.deleted} empty folders (failed: ${report.failed}).`,
+      };
+    }
+    return { ok: false, error: "Unsupported internal action." };
+  }
+
+  const result = await runPowerShell(action.command, action.timeoutMs || 30000);
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error,
+      stderr: result.stderr,
+    };
+  }
+  return {
+    ok: true,
+    summary: result.stdout.trim() || "Command executed.",
+  };
+}
+
+async function applyOptimizationPlan(actionIds, options = {}) {
+  const dryRun = options.dryRun !== false;
+  const admin = await isAdmin();
+
+  const wanted = new Set(Array.isArray(actionIds) ? actionIds : []);
+  const actions = OPTIMIZATION_ACTIONS.filter((action) => wanted.has(action.id));
+
+  const results = [];
+  for (const action of actions) {
+    if (action.requiresAdmin && !admin) {
+      results.push({
+        id: action.id,
+        title: action.title,
+        status: "skipped_admin_required",
+        ok: false,
+        message: "Run app as Administrator to apply this action.",
+      });
+      continue;
+    }
+
+    if (dryRun) {
+      results.push({
+        id: action.id,
+        title: action.title,
+        status: "simulated",
+        ok: true,
+        message: "Dry run only, no system changes applied.",
+      });
+      continue;
+    }
+
+    const execution = await executeOptimizationAction(action);
+    results.push({
+      id: action.id,
+      title: action.title,
+      status: execution.ok ? "applied" : "failed",
+      ok: execution.ok,
+      message: execution.ok ? execution.summary : execution.error || "Unknown failure",
+      stderr: execution.stderr || "",
+    });
+  }
+
+  return {
+    executedAt: new Date().toISOString(),
+    dryRun,
+    admin,
+    totalRequested: actions.length,
+    applied: results.filter((x) => x.status === "applied").length,
+    simulated: results.filter((x) => x.status === "simulated").length,
+    failed: results.filter((x) => x.status === "failed").length,
+    skippedAdmin: results.filter((x) => x.status === "skipped_admin_required").length,
+    results,
+  };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1340,
@@ -684,6 +1055,12 @@ function createWindow() {
 app.whenReady().then(() => {
   ipcMain.handle("system:get-overview", async () => getOverview());
   ipcMain.handle("system:get-battery-details", async () => getBatteryDetails());
+  ipcMain.handle("optimizer:get-catalog", async () => getOptimizationCatalog());
+  ipcMain.handle("optimizer:get-insights", async () => getOptimizationInsights());
+  ipcMain.handle("optimizer:apply-plan", async (_event, payload) => {
+    const actionIds = payload && Array.isArray(payload.actionIds) ? payload.actionIds : [];
+    return applyOptimizationPlan(actionIds, payload || {});
+  });
   ipcMain.handle("scan:junk", async () => scanJunk());
   ipcMain.handle("scan:empty-folders", async () => scanEmptyFolders());
   ipcMain.handle("cleanup:execute", async (_event, options) => cleanupSelected(options || {}));

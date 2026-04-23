@@ -13,12 +13,20 @@ const closeDetailsBtn = document.getElementById("closeDetailsBtn");
 const detailsTitleEl = document.getElementById("detailsTitle");
 const detailsSubtitleEl = document.getElementById("detailsSubtitle");
 const batteryDetailGridEl = document.getElementById("batteryDetailGrid");
+const simulateRecommendedBtn = document.getElementById("simulateRecommended");
+const applyRecommendedBtn = document.getElementById("applyRecommended");
+const applySelectedBtn = document.getElementById("applySelected");
+const optimizerMetaEl = document.getElementById("optimizerMeta");
+const optimizerActionsEl = document.getElementById("optimizerActions");
+const optimizerInsightsEl = document.getElementById("optimizerInsights");
+const optimizerResultsEl = document.getElementById("optimizerResults");
 
 const runJunkScanBtn = document.getElementById("runJunkScan");
 const runCleanupBtn = document.getElementById("runCleanup");
 const runEmptyScanBtn = document.getElementById("runEmptyScan");
 
 let latestJunkScan = null;
+let optimizerCatalog = null;
 
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -101,6 +109,11 @@ function addDetailItem(container, label, value) {
   container.appendChild(fragment);
 }
 
+function clearListWithMessage(container, main, sub) {
+  clearElement(container);
+  addListItem(container, main, sub);
+}
+
 function openDetails() {
   detailsOverlayEl.classList.remove("hidden");
 }
@@ -159,6 +172,198 @@ async function openBatteryDetails() {
     "Power Source",
     details.live?.powerOnline === true ? "AC Adapter" : details.live?.powerOnline === false ? "Battery" : "Unknown"
   );
+}
+
+function formatRiskTag(action) {
+  return `Risk: ${action.risk}`;
+}
+
+function formatImpactTag(action) {
+  return `Impact: ${action.impact}`;
+}
+
+function renderOptimizerActions(catalog) {
+  optimizerCatalog = catalog;
+  clearElement(optimizerActionsEl);
+  for (const category of catalog.categories) {
+    const group = document.createElement("div");
+    group.className = "action-group";
+
+    const title = document.createElement("h4");
+    title.className = "action-group-title";
+    title.textContent = category.title;
+    group.appendChild(title);
+
+    for (const action of category.actions) {
+      const row = document.createElement("label");
+      row.className = "action-row";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "action-check";
+      checkbox.dataset.actionId = action.id;
+      checkbox.checked = !!action.recommended;
+
+      const textWrap = document.createElement("div");
+      const name = document.createElement("p");
+      name.className = "action-name";
+      name.textContent = action.title;
+      const desc = document.createElement("p");
+      desc.className = "action-desc";
+      desc.textContent = action.description;
+      textWrap.appendChild(name);
+      textWrap.appendChild(desc);
+
+      const tags = document.createElement("div");
+      tags.className = "action-tags";
+      const riskTag = document.createElement("span");
+      riskTag.className = "tag";
+      riskTag.textContent = formatRiskTag(action);
+      const impactTag = document.createElement("span");
+      impactTag.className = "tag";
+      impactTag.textContent = formatImpactTag(action);
+      tags.appendChild(riskTag);
+      tags.appendChild(impactTag);
+      if (action.recommended) {
+        const rec = document.createElement("span");
+        rec.className = "tag rec";
+        rec.textContent = "Recommended";
+        tags.appendChild(rec);
+      }
+      if (action.requiresAdmin) {
+        const adminTag = document.createElement("span");
+        adminTag.className = "tag";
+        adminTag.textContent = "Admin";
+        tags.appendChild(adminTag);
+      }
+
+      row.appendChild(checkbox);
+      row.appendChild(textWrap);
+      row.appendChild(tags);
+      group.appendChild(row);
+    }
+    optimizerActionsEl.appendChild(group);
+  }
+}
+
+function collectSelectedActionIds() {
+  const checks = optimizerActionsEl.querySelectorAll("input[data-action-id]");
+  const ids = [];
+  for (const check of checks) {
+    if (check.checked) {
+      ids.push(check.dataset.actionId);
+    }
+  }
+  return ids;
+}
+
+function renderOptimizerInsights(insights) {
+  clearElement(optimizerInsightsEl);
+  addListItem(
+    optimizerInsightsEl,
+    `Startup Items: ${insights.startup.totalCount}`,
+    "Items loaded from Win32_StartupCommand"
+  );
+  addListItem(
+    optimizerInsightsEl,
+    `Potential Reclaim: ${formatBytes(insights.junkSummary.totalBytes)}`,
+    `Temp ${formatBytes(insights.junkSummary.tempBytes)} | Cache ${formatBytes(insights.junkSummary.appCacheBytes)} | Dev ${formatBytes(insights.junkSummary.devJunkBytes)}`
+  );
+  for (const service of insights.services) {
+    addListItem(
+      optimizerInsightsEl,
+      `${service.name}: ${service.status}`,
+      `Startup type: ${service.startType}`
+    );
+  }
+  for (const startup of insights.startup.items.slice(0, 6)) {
+    addListItem(
+      optimizerInsightsEl,
+      `Startup: ${startup.name}`,
+      `${startup.location} | ${startup.user || "Unknown user"}`
+    );
+  }
+}
+
+function renderOptimizerResult(result) {
+  clearElement(optimizerResultsEl);
+  addListItem(
+    optimizerResultsEl,
+    `${result.dryRun ? "Dry Run" : "Apply"} complete`,
+    `${result.totalRequested} requested | ${result.applied} applied | ${result.simulated} simulated | ${result.failed} failed | ${result.skippedAdmin} admin-skipped`
+  );
+  for (const item of result.results) {
+    addListItem(
+      optimizerResultsEl,
+      `${item.title} -> ${item.status}`,
+      item.message
+    );
+  }
+}
+
+async function loadOptimizerData() {
+  try {
+    const [catalog, insights] = await Promise.all([
+      api.getOptimizerCatalog(),
+      api.getOptimizerInsights(),
+    ]);
+    renderOptimizerActions(catalog);
+    renderOptimizerInsights(insights);
+    optimizerMetaEl.textContent = `Loaded ${catalog.categories.reduce((acc, x) => acc + x.actions.length, 0)} actions | Admin mode: ${insights.admin ? "Yes" : "No"}`;
+  } catch (error) {
+    optimizerMetaEl.textContent = `Optimizer load failed: ${error.message || "Unknown error"}`;
+    clearListWithMessage(optimizerInsightsEl, "Insights unavailable", "Failed to fetch optimizer context.");
+  }
+}
+
+async function runOptimizerPlan(actionIds, dryRun) {
+  if (!actionIds.length) {
+    optimizerMetaEl.textContent = "No actions selected.";
+    return;
+  }
+  setLoading(simulateRecommendedBtn, true, "Working...");
+  setLoading(applyRecommendedBtn, true, "Working...");
+  setLoading(applySelectedBtn, true, "Working...");
+  try {
+    const result = await api.applyOptimizerPlan({ actionIds, dryRun });
+    renderOptimizerResult(result);
+    optimizerMetaEl.textContent = `${dryRun ? "Simulation" : "Apply"} executed at ${formatTime(result.executedAt)}`;
+    const freshInsights = await api.getOptimizerInsights();
+    renderOptimizerInsights(freshInsights);
+  } catch (error) {
+    optimizerMetaEl.textContent = `Plan failed: ${error.message || "Unknown error"}`;
+  } finally {
+    setLoading(simulateRecommendedBtn, false, "");
+    setLoading(applyRecommendedBtn, false, "");
+    setLoading(applySelectedBtn, false, "");
+  }
+}
+
+async function simulateRecommendedPlan() {
+  if (!optimizerCatalog) {
+    return;
+  }
+  await runOptimizerPlan(optimizerCatalog.safeProfileActionIds, true);
+}
+
+async function applyRecommendedPlan() {
+  if (!optimizerCatalog) {
+    return;
+  }
+  const proceed = window.confirm("Apply all recommended optimization actions now?");
+  if (!proceed) {
+    return;
+  }
+  await runOptimizerPlan(optimizerCatalog.safeProfileActionIds, false);
+}
+
+async function applySelectedPlan() {
+  const selected = collectSelectedActionIds();
+  const proceed = window.confirm(`Apply ${selected.length} selected optimization action(s)?`);
+  if (!proceed) {
+    return;
+  }
+  await runOptimizerPlan(selected, false);
 }
 
 function renderMetricCards(overview) {
@@ -328,6 +533,9 @@ async function runEmptyFolderScan() {
 runJunkScanBtn.addEventListener("click", runJunkScan);
 runCleanupBtn.addEventListener("click", runCleanup);
 runEmptyScanBtn.addEventListener("click", runEmptyFolderScan);
+simulateRecommendedBtn.addEventListener("click", simulateRecommendedPlan);
+applyRecommendedBtn.addEventListener("click", applyRecommendedPlan);
+applySelectedBtn.addEventListener("click", applySelectedPlan);
 closeDetailsBtn.addEventListener("click", closeDetails);
 detailsOverlayEl.addEventListener("click", (event) => {
   if (event.target === detailsOverlayEl) {
@@ -344,6 +552,7 @@ document.addEventListener("keydown", (event) => {
   try {
     await refreshOverview();
     await runJunkScan();
+    await loadOptimizerData();
   } catch (error) {
     scanTimeEl.textContent = `Initialization failed: ${error.message || "Unknown error"}`;
   }
