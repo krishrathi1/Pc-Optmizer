@@ -370,6 +370,74 @@ function parseJsonOutput(raw) {
   }
 }
 
+function sanitizeRuntimeMinutes(value) {
+  const minutes = toNumber(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return null;
+  }
+  // Some providers return sentinel values (for example 71582788 or 4294967295).
+  if (minutes > 60 * 24 * 7) {
+    return null;
+  }
+  return minutes;
+}
+
+function stripHtml(text) {
+  if (typeof text !== "string") {
+    return "";
+  }
+  return text
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseMilliWattHourValue(rawText) {
+  if (typeof rawText !== "string" || !rawText.trim()) {
+    return null;
+  }
+  const match = rawText.match(/([\d,]+)\s*mWh/i) || rawText.match(/([\d,]+)/);
+  if (!match) {
+    return null;
+  }
+  return toNumber(match[1].replace(/,/g, ""));
+}
+
+async function getBatteryReportFallback() {
+  const reportPath = path.join(os.tmpdir(), "nexus-battery-report.html");
+  const escapedPath = reportPath.replace(/'/g, "''");
+  const command = `$p='${escapedPath}'; powercfg /batteryreport /output $p | Out-Null; if (Test-Path $p) { Get-Content -Raw $p }`;
+  const result = await runPowerShell(command, 30000);
+  if (!result.ok || !result.stdout.trim()) {
+    return null;
+  }
+
+  const html = result.stdout.replace(/\r?\n/g, " ");
+  const extractLabelValue = (label) => {
+    const pattern = new RegExp(`<span\\s+class=\"label\">${label}<\\/span><\\/td><td>(.*?)<\\/td>`, "i");
+    const match = html.match(pattern);
+    return match ? stripHtml(match[1]) : null;
+  };
+
+  const name = extractLabelValue("NAME");
+  const manufacturer = extractLabelValue("MANUFACTURER");
+  const serialNumber = extractLabelValue("SERIAL NUMBER");
+  const designCapacityRaw = extractLabelValue("DESIGN CAPACITY");
+  const fullChargeCapacityRaw = extractLabelValue("FULL CHARGE CAPACITY");
+  const cycleCountRaw = extractLabelValue("CYCLE COUNT");
+
+  return {
+    name: name || null,
+    manufacturer: manufacturer || null,
+    serialNumber: serialNumber || null,
+    designCapacitymWh: parseMilliWattHourValue(designCapacityRaw),
+    fullChargedCapacitymWh: parseMilliWattHourValue(fullChargeCapacityRaw),
+    cycleCount: cycleCountRaw && cycleCountRaw !== "-" ? toNumber(cycleCountRaw.replace(/,/g, "")) : null,
+  };
+}
+
 async function getDiskInfo() {
   const cmd = "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | Select-Object DeviceID,Size,FreeSpace,VolumeName | ConvertTo-Json -Depth 3";
   const result = await runPowerShell(cmd);
@@ -424,7 +492,7 @@ function mapBatteryStatus(statusCode) {
 }
 
 async function getBatteryDetails() {
-  const [win32Result, staticResult, fullResult, liveResult] = await Promise.all([
+  const [win32Result, staticResult, fullResult, liveResult, cycleResult, reportFallback] = await Promise.all([
     runPowerShell(
       "Get-CimInstance Win32_Battery | Select-Object Name,DeviceID,BatteryStatus,EstimatedChargeRemaining,EstimatedRunTime,DesignVoltage,Chemistry | ConvertTo-Json -Depth 3",
       10000
@@ -441,19 +509,26 @@ async function getBatteryDetails() {
       "Get-CimInstance -Namespace root\\wmi -ClassName BatteryStatus | Select-Object RemainingCapacity,ChargeRate,DischargeRate,Voltage,PowerOnline | ConvertTo-Json -Depth 3",
       10000
     ),
+    runPowerShell(
+      "Get-CimInstance -Namespace root\\wmi -ClassName BatteryCycleCount | Select-Object CycleCount | ConvertTo-Json -Depth 3",
+      10000
+    ),
+    getBatteryReportFallback(),
   ]);
 
   const win32Rows = parseJsonOutput(win32Result.ok ? win32Result.stdout : "");
   const staticRows = parseJsonOutput(staticResult.ok ? staticResult.stdout : "");
   const fullRows = parseJsonOutput(fullResult.ok ? fullResult.stdout : "");
   const liveRows = parseJsonOutput(liveResult.ok ? liveResult.stdout : "");
+  const cycleRows = parseJsonOutput(cycleResult.ok ? cycleResult.stdout : "");
 
   const win32 = win32Rows[0] || null;
   const staticData = staticRows[0] || null;
   const full = fullRows[0] || null;
   const live = liveRows[0] || null;
+  const cycle = cycleRows[0] || null;
 
-  if (!win32 && !staticData && !full && !live) {
+  if (!win32 && !staticData && !full && !live && !reportFallback) {
     return {
       available: false,
       message: "No battery telemetry available on this machine.",
@@ -461,12 +536,17 @@ async function getBatteryDetails() {
     };
   }
 
-  const designCapacity = toNumber(staticData?.DesignedCapacity);
-  const fullChargedCapacity = toNumber(full?.FullChargedCapacity);
+  const designCapacity = toNumber(staticData?.DesignedCapacity)
+    || toNumber(win32?.DesignCapacity)
+    || toNumber(reportFallback?.designCapacitymWh);
+  const fullChargedCapacity = toNumber(full?.FullChargedCapacity)
+    || toNumber(win32?.FullChargeCapacity)
+    || toNumber(reportFallback?.fullChargedCapacitymWh);
   const remainingCapacity = toNumber(live?.RemainingCapacity);
   const chargeRemainingPercent = toNumber(win32?.EstimatedChargeRemaining);
-  const runTimeMinutes = toNumber(win32?.EstimatedRunTime);
+  const runTimeMinutes = sanitizeRuntimeMinutes(win32?.EstimatedRunTime);
   const batteryStatus = toNumber(win32?.BatteryStatus);
+  const cycleCount = toNumber(cycle?.CycleCount) || toNumber(reportFallback?.cycleCount);
 
   const healthPercent = designCapacity && fullChargedCapacity
     ? Math.round((fullChargedCapacity / designCapacity) * 100)
@@ -480,10 +560,10 @@ async function getBatteryDetails() {
     available: true,
     scannedAt: new Date().toISOString(),
     identity: {
-      name: win32?.Name || staticData?.DeviceName || null,
+      name: win32?.Name || staticData?.DeviceName || reportFallback?.name || null,
       deviceId: win32?.DeviceID || null,
-      manufacturer: staticData?.ManufactureName || null,
-      serialNumber: staticData?.SerialNumber || null,
+      manufacturer: staticData?.ManufactureName || reportFallback?.manufacturer || null,
+      serialNumber: staticData?.SerialNumber || reportFallback?.serialNumber || null,
       chemistryCode: toNumber(win32?.Chemistry),
     },
     lifecycle: {
@@ -494,6 +574,7 @@ async function getBatteryDetails() {
       wearPercent,
       remainingOfFullPercent,
       reportedChargePercent: chargeRemainingPercent,
+      cycleCount,
     },
     live: {
       batteryStatusCode: batteryStatus,

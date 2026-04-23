@@ -137,6 +137,11 @@ async function openBatteryDetails() {
   addDetailItem(batteryDetailGridEl, "Estimated Time Left", formatMinutes(details.live?.estimatedRuntimeMinutes));
   addDetailItem(
     batteryDetailGridEl,
+    "Cycle Count",
+    Number.isFinite(details.lifecycle?.cycleCount) ? String(details.lifecycle.cycleCount) : "N/A"
+  );
+  addDetailItem(
+    batteryDetailGridEl,
     "Live Power Flow",
     Number.isFinite(details.live?.chargeRateMilliW)
       ? `Charging ${Math.round(details.live.chargeRateMilliW / 1000)} W`
