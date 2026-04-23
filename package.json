@@ -1,0 +1,23 @@
+﻿{
+  "name": "nexus-ai-pc-cleaner",
+  "version": "0.1.0",
+  "description": "Nexus AI PC Cleaner & Hardware Architect MVP",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "set ELECTRON_RUN_AS_NODE=& electron .",
+    "start": "set ELECTRON_RUN_AS_NODE=& electron .",
+    "build": "echo \"Packaging not configured yet\""
+  },
+  "keywords": [
+    "electron",
+    "pc-cleaner",
+    "windows",
+    "system-optimizer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.2"
+  }
+}

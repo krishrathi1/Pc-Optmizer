@@ -1,0 +1,79 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nexus AI PC Cleaner</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="background-layer"></div>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Nexus Architect</p>
+          <h1>Nexus AI PC Cleaner</h1>
+          <p class="subtitle">Windows optimization and telemetry command center</p>
+        </div>
+        <div class="status-cluster">
+          <div class="status-pill" id="adminBadge">Checking mode...</div>
+          <div class="status-pill" id="scanTime">Never scanned</div>
+        </div>
+      </header>
+
+      <section class="metrics-grid" id="metricCards"></section>
+
+      <section class="action-grid">
+        <article class="panel">
+          <h2>Storage & Junk Protocol</h2>
+          <p>Analyze temporary files, app cache growth, and development residue.</p>
+          <div class="button-row">
+            <button id="runJunkScan" class="btn btn-primary">Run Deep Junk Scan</button>
+            <button id="runCleanup" class="btn btn-danger">Execute Cleanup</button>
+          </div>
+          <div class="panel-meta" id="junkMeta">No scan yet.</div>
+        </article>
+
+        <article class="panel">
+          <h2>Empty Shell Scan</h2>
+          <p>Find empty folders that clutter NTFS metadata and slow search.</p>
+          <div class="button-row">
+            <button id="runEmptyScan" class="btn btn-primary">Scan Empty Folders</button>
+          </div>
+          <div class="panel-meta" id="emptyMeta">No scan yet.</div>
+        </article>
+      </section>
+
+      <section class="result-grid">
+        <article class="result-panel">
+          <h3>Junk Breakdown</h3>
+          <div id="junkBreakdown" class="list"></div>
+        </article>
+
+        <article class="result-panel">
+          <h3>Top Dev Junk Findings</h3>
+          <div id="devFindings" class="list"></div>
+        </article>
+
+        <article class="result-panel">
+          <h3>Empty Folder Results</h3>
+          <div id="emptyResults" class="list"></div>
+        </article>
+      </section>
+
+      <footer class="footer">
+        <span>PRD Track: v3.0 MVP foundation</span>
+        <span class="note">Admin mode unlocks deeper system actions. Current build focuses on safe, auditable operations.</span>
+      </footer>
+    </main>
+
+    <template id="listItemTemplate">
+      <div class="list-item">
+        <div class="list-main"></div>
+        <div class="list-sub"></div>
+      </div>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
