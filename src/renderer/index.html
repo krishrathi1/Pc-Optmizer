@@ -67,11 +67,32 @@
       </footer>
     </main>
 
+    <section class="details-overlay hidden" id="detailsOverlay">
+      <div class="details-page">
+        <header class="details-header">
+          <button id="closeDetailsBtn" class="btn btn-secondary" type="button">Back</button>
+          <div>
+            <p class="eyebrow">Hardware Detail</p>
+            <h2 id="detailsTitle">Battery Details</h2>
+          </div>
+        </header>
+        <p class="details-subtitle" id="detailsSubtitle">Live telemetry for battery health and remaining life.</p>
+        <section class="details-metrics" id="batteryDetailGrid"></section>
+      </div>
+    </section>
+
     <template id="listItemTemplate">
       <div class="list-item">
         <div class="list-main"></div>
         <div class="list-sub"></div>
       </div>
+    </template>
+
+    <template id="detailItemTemplate">
+      <article class="detail-card">
+        <p class="detail-label"></p>
+        <p class="detail-value"></p>
+      </article>
     </template>
 
     <script src="./app.js"></script>

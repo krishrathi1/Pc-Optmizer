@@ -358,46 +358,153 @@ function toNumber(value) {
   return Number.isFinite(asNum) ? asNum : null;
 }
 
-async function getDiskInfo() {
-  const cmd = "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | Select-Object DeviceID,Size,FreeSpace,VolumeName | ConvertTo-Json -Depth 3";
-  const result = await runPowerShell(cmd);
-  if (!result.ok || !result.stdout.trim()) {
+function parseJsonOutput(raw) {
+  if (!raw || !raw.trim()) {
     return [];
   }
-
   try {
-    const parsed = JSON.parse(result.stdout);
-    const rows = Array.isArray(parsed) ? parsed : [parsed];
-    return rows.map((row) => ({
-      deviceId: row.DeviceID,
-      volumeName: row.VolumeName,
-      size: toNumber(row.Size),
-      freeSpace: toNumber(row.FreeSpace),
-    }));
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [parsed];
   } catch {
     return [];
   }
 }
 
+async function getDiskInfo() {
+  const cmd = "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | Select-Object DeviceID,Size,FreeSpace,VolumeName | ConvertTo-Json -Depth 3";
+  const result = await runPowerShell(cmd);
+  if (!result.ok) {
+    return [];
+  }
+
+  const rows = parseJsonOutput(result.stdout);
+  return rows.map((row) => ({
+    deviceId: row.DeviceID,
+    volumeName: row.VolumeName,
+    size: toNumber(row.Size),
+    freeSpace: toNumber(row.FreeSpace),
+  }));
+}
+
 async function getBatteryInfo() {
   const cmd = "Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining,BatteryStatus,DesignVoltage,Name | ConvertTo-Json -Depth 3";
   const result = await runPowerShell(cmd, 10000);
-  if (!result.ok || !result.stdout.trim()) {
+  if (!result.ok) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(result.stdout);
-    const row = Array.isArray(parsed) ? parsed[0] : parsed;
-    return {
-      chargeRemaining: toNumber(row.EstimatedChargeRemaining),
-      batteryStatus: toNumber(row.BatteryStatus),
-      designVoltage: toNumber(row.DesignVoltage),
-      name: row.Name || null,
-    };
-  } catch {
+  const rows = parseJsonOutput(result.stdout);
+  const row = rows[0];
+  if (!row) {
     return null;
   }
+  return {
+    chargeRemaining: toNumber(row.EstimatedChargeRemaining),
+    batteryStatus: toNumber(row.BatteryStatus),
+    designVoltage: toNumber(row.DesignVoltage),
+    name: row.Name || null,
+  };
+}
+
+function mapBatteryStatus(statusCode) {
+  const map = {
+    1: "Discharging",
+    2: "AC connected",
+    3: "Fully charged",
+    4: "Low",
+    5: "Critical",
+    6: "Charging",
+    7: "Charging (high)",
+    8: "Charging (low)",
+    9: "Charging (critical)",
+    10: "Undefined",
+    11: "Partially charged",
+  };
+  return map[statusCode] || "Unknown";
+}
+
+async function getBatteryDetails() {
+  const [win32Result, staticResult, fullResult, liveResult] = await Promise.all([
+    runPowerShell(
+      "Get-CimInstance Win32_Battery | Select-Object Name,DeviceID,BatteryStatus,EstimatedChargeRemaining,EstimatedRunTime,DesignVoltage,Chemistry | ConvertTo-Json -Depth 3",
+      10000
+    ),
+    runPowerShell(
+      "Get-CimInstance -Namespace root\\wmi -ClassName BatteryStaticData | Select-Object DeviceName,ManufactureName,SerialNumber,DesignedCapacity | ConvertTo-Json -Depth 3",
+      10000
+    ),
+    runPowerShell(
+      "Get-CimInstance -Namespace root\\wmi -ClassName BatteryFullChargedCapacity | Select-Object FullChargedCapacity | ConvertTo-Json -Depth 3",
+      10000
+    ),
+    runPowerShell(
+      "Get-CimInstance -Namespace root\\wmi -ClassName BatteryStatus | Select-Object RemainingCapacity,ChargeRate,DischargeRate,Voltage,PowerOnline | ConvertTo-Json -Depth 3",
+      10000
+    ),
+  ]);
+
+  const win32Rows = parseJsonOutput(win32Result.ok ? win32Result.stdout : "");
+  const staticRows = parseJsonOutput(staticResult.ok ? staticResult.stdout : "");
+  const fullRows = parseJsonOutput(fullResult.ok ? fullResult.stdout : "");
+  const liveRows = parseJsonOutput(liveResult.ok ? liveResult.stdout : "");
+
+  const win32 = win32Rows[0] || null;
+  const staticData = staticRows[0] || null;
+  const full = fullRows[0] || null;
+  const live = liveRows[0] || null;
+
+  if (!win32 && !staticData && !full && !live) {
+    return {
+      available: false,
+      message: "No battery telemetry available on this machine.",
+      scannedAt: new Date().toISOString(),
+    };
+  }
+
+  const designCapacity = toNumber(staticData?.DesignedCapacity);
+  const fullChargedCapacity = toNumber(full?.FullChargedCapacity);
+  const remainingCapacity = toNumber(live?.RemainingCapacity);
+  const chargeRemainingPercent = toNumber(win32?.EstimatedChargeRemaining);
+  const runTimeMinutes = toNumber(win32?.EstimatedRunTime);
+  const batteryStatus = toNumber(win32?.BatteryStatus);
+
+  const healthPercent = designCapacity && fullChargedCapacity
+    ? Math.round((fullChargedCapacity / designCapacity) * 100)
+    : null;
+  const wearPercent = Number.isFinite(healthPercent) ? Math.max(0, 100 - healthPercent) : null;
+  const remainingOfFullPercent = fullChargedCapacity && remainingCapacity
+    ? Math.round((remainingCapacity / fullChargedCapacity) * 100)
+    : chargeRemainingPercent;
+
+  return {
+    available: true,
+    scannedAt: new Date().toISOString(),
+    identity: {
+      name: win32?.Name || staticData?.DeviceName || null,
+      deviceId: win32?.DeviceID || null,
+      manufacturer: staticData?.ManufactureName || null,
+      serialNumber: staticData?.SerialNumber || null,
+      chemistryCode: toNumber(win32?.Chemistry),
+    },
+    lifecycle: {
+      designCapacitymWh: designCapacity,
+      fullChargedCapacitymWh: fullChargedCapacity,
+      remainingCapacitymWh: remainingCapacity,
+      healthPercent,
+      wearPercent,
+      remainingOfFullPercent,
+      reportedChargePercent: chargeRemainingPercent,
+    },
+    live: {
+      batteryStatusCode: batteryStatus,
+      batteryStatusLabel: mapBatteryStatus(batteryStatus),
+      estimatedRuntimeMinutes: runTimeMinutes,
+      chargeRateMilliW: toNumber(live?.ChargeRate),
+      dischargeRateMilliW: toNumber(live?.DischargeRate),
+      voltageMilliV: toNumber(live?.Voltage) || toNumber(win32?.DesignVoltage),
+      powerOnline: typeof live?.PowerOnline === "boolean" ? live.PowerOnline : null,
+    },
+  };
 }
 
 async function getCpuUsagePercent() {
@@ -495,6 +602,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle("system:get-overview", async () => getOverview());
+  ipcMain.handle("system:get-battery-details", async () => getBatteryDetails());
   ipcMain.handle("scan:junk", async () => scanJunk());
   ipcMain.handle("scan:empty-folders", async () => scanEmptyFolders());
   ipcMain.handle("cleanup:execute", async (_event, options) => cleanupSelected(options || {}));

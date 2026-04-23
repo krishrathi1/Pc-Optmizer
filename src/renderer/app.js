@@ -8,6 +8,11 @@ const emptyMetaEl = document.getElementById("emptyMeta");
 const junkBreakdownEl = document.getElementById("junkBreakdown");
 const devFindingsEl = document.getElementById("devFindings");
 const emptyResultsEl = document.getElementById("emptyResults");
+const detailsOverlayEl = document.getElementById("detailsOverlay");
+const closeDetailsBtn = document.getElementById("closeDetailsBtn");
+const detailsTitleEl = document.getElementById("detailsTitle");
+const detailsSubtitleEl = document.getElementById("detailsSubtitle");
+const batteryDetailGridEl = document.getElementById("batteryDetailGrid");
 
 const runJunkScanBtn = document.getElementById("runJunkScan");
 const runCleanupBtn = document.getElementById("runCleanup");
@@ -35,6 +40,25 @@ function formatPercent(value) {
     return "N/A";
   }
   return `${value}%`;
+}
+
+function formatWattHoursFromMilli(value) {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+  return `${(value / 1000).toFixed(2)} Wh`;
+}
+
+function formatMinutes(value) {
+  if (!Number.isFinite(value) || value < 0) {
+    return "N/A";
+  }
+  const hours = Math.floor(value / 60);
+  const minutes = Math.round(value % 60);
+  if (hours <= 0) {
+    return `${minutes} min`;
+  }
+  return `${hours}h ${minutes}m`;
 }
 
 function formatTime(value) {
@@ -69,6 +93,69 @@ function addListItem(container, main, sub) {
   container.appendChild(fragment);
 }
 
+function addDetailItem(container, label, value) {
+  const template = document.getElementById("detailItemTemplate");
+  const fragment = template.content.cloneNode(true);
+  fragment.querySelector(".detail-label").textContent = label;
+  fragment.querySelector(".detail-value").textContent = value;
+  container.appendChild(fragment);
+}
+
+function openDetails() {
+  detailsOverlayEl.classList.remove("hidden");
+}
+
+function closeDetails() {
+  detailsOverlayEl.classList.add("hidden");
+}
+
+async function openBatteryDetails() {
+  detailsTitleEl.textContent = "Battery Details";
+  detailsSubtitleEl.textContent = "Collecting battery telemetry...";
+  clearElement(batteryDetailGridEl);
+  openDetails();
+
+  const details = await api.getBatteryDetails();
+  if (!details.available) {
+    detailsSubtitleEl.textContent = details.message || "Battery telemetry not available.";
+    addDetailItem(batteryDetailGridEl, "Status", "No battery found");
+    return;
+  }
+
+  detailsSubtitleEl.textContent = `Scanned ${formatTime(details.scannedAt)} | ${details.live?.batteryStatusLabel || "Unknown state"}`;
+
+  addDetailItem(batteryDetailGridEl, "Battery Name", details.identity?.name || "N/A");
+  addDetailItem(batteryDetailGridEl, "Manufacturer", details.identity?.manufacturer || "N/A");
+  addDetailItem(batteryDetailGridEl, "Serial Number", details.identity?.serialNumber || "N/A");
+  addDetailItem(batteryDetailGridEl, "Design Capacity", formatWattHoursFromMilli(details.lifecycle?.designCapacitymWh));
+  addDetailItem(batteryDetailGridEl, "Full Charge Capacity", formatWattHoursFromMilli(details.lifecycle?.fullChargedCapacitymWh));
+  addDetailItem(batteryDetailGridEl, "Remaining Capacity", formatWattHoursFromMilli(details.lifecycle?.remainingCapacitymWh));
+  addDetailItem(batteryDetailGridEl, "Battery Health", formatPercent(details.lifecycle?.healthPercent));
+  addDetailItem(batteryDetailGridEl, "Battery Wear", formatPercent(details.lifecycle?.wearPercent));
+  addDetailItem(batteryDetailGridEl, "Charge Left", formatPercent(details.lifecycle?.remainingOfFullPercent));
+  addDetailItem(batteryDetailGridEl, "Windows Charge", formatPercent(details.lifecycle?.reportedChargePercent));
+  addDetailItem(batteryDetailGridEl, "Estimated Time Left", formatMinutes(details.live?.estimatedRuntimeMinutes));
+  addDetailItem(
+    batteryDetailGridEl,
+    "Live Power Flow",
+    Number.isFinite(details.live?.chargeRateMilliW)
+      ? `Charging ${Math.round(details.live.chargeRateMilliW / 1000)} W`
+      : Number.isFinite(details.live?.dischargeRateMilliW)
+        ? `Discharging ${Math.round(details.live.dischargeRateMilliW / 1000)} W`
+        : "N/A"
+  );
+  addDetailItem(
+    batteryDetailGridEl,
+    "Voltage",
+    Number.isFinite(details.live?.voltageMilliV) ? `${(details.live.voltageMilliV / 1000).toFixed(2)} V` : "N/A"
+  );
+  addDetailItem(
+    batteryDetailGridEl,
+    "Power Source",
+    details.live?.powerOnline === true ? "AC Adapter" : details.live?.powerOnline === false ? "Battery" : "Unknown"
+  );
+}
+
 function renderMetricCards(overview) {
   const memoryUsed = overview.memory?.used || 0;
   const memoryTotal = overview.memory?.total || 0;
@@ -95,6 +182,7 @@ function renderMetricCards(overview) {
       value: overview.battery && Number.isFinite(overview.battery.chargeRemaining)
         ? `${overview.battery.chargeRemaining}%`
         : "Desktop/Not Available",
+      key: "battery",
     },
   ];
 
@@ -102,6 +190,19 @@ function renderMetricCards(overview) {
   for (const card of cards) {
     const wrapper = document.createElement("div");
     wrapper.className = "metric-card";
+    if (card.key === "battery") {
+      wrapper.classList.add("interactive");
+      wrapper.title = "Click to open battery details";
+      wrapper.addEventListener("click", () => {
+        openBatteryDetails().catch((error) => {
+          detailsTitleEl.textContent = "Battery Details";
+          detailsSubtitleEl.textContent = `Failed to load details: ${error.message || "Unknown error"}`;
+          clearElement(batteryDetailGridEl);
+          addDetailItem(batteryDetailGridEl, "Status", "Unable to load battery details");
+          openDetails();
+        });
+      });
+    }
 
     const title = document.createElement("p");
     title.className = "metric-title";
@@ -222,6 +323,17 @@ async function runEmptyFolderScan() {
 runJunkScanBtn.addEventListener("click", runJunkScan);
 runCleanupBtn.addEventListener("click", runCleanup);
 runEmptyScanBtn.addEventListener("click", runEmptyFolderScan);
+closeDetailsBtn.addEventListener("click", closeDetails);
+detailsOverlayEl.addEventListener("click", (event) => {
+  if (event.target === detailsOverlayEl) {
+    closeDetails();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !detailsOverlayEl.classList.contains("hidden")) {
+    closeDetails();
+  }
+});
 
 (async () => {
   try {
