@@ -24,15 +24,16 @@ This repository now contains an end-to-end Electron application scaffold based o
   - explicit confirmation in UI before action
 - Responsive, themed "Nexus Architect" dashboard UI
 - Optimization Engine modules (scripted automation layer):
+  - safety/recovery action (restore point creation)
   - service/process optimization actions
   - privacy/telemetry actions
   - startup optimization actions
   - UWP debloat action pack
-  - cleanup actions (temp/cache + empty folder deletion)
+  - cleanup actions (temp/cache, empty folders, DISM cleanup, delivery cache, recycle bin, SSD retrim)
   - registry responsiveness actions
-  - network actions (DNS flush / optional DNS switch)
-  - feature control actions (Copilot toggle)
-  - dry-run simulation, recommended profile, and selected-action execution
+  - network actions (DNS flush/switch, latency tweaks)
+  - feature control actions (Copilot, power plan, hibernation/fast startup, telemetry tasks)
+  - dry-run simulation, recommended profile, full selection controls, and selected-action execution
 
 ## Quick start
 

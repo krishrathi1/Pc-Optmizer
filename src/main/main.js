@@ -10,6 +10,7 @@ const POWER_SHELL = process.env.ComSpec
   : "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 
 const OPTIMIZATION_CATEGORIES = [
+  { id: "safety", title: "Safety & Recovery" },
   { id: "services", title: "Service & Process Optimization" },
   { id: "privacy", title: "Privacy & Telemetry Isolation" },
   { id: "startup", title: "Startup Optimization" },
@@ -22,6 +23,19 @@ const OPTIMIZATION_CATEGORIES = [
 
 const OPTIMIZATION_ACTIONS = [
   {
+    id: "create_restore_point",
+    category: "safety",
+    title: "Create System Restore Point",
+    description: "Creates a restore point before major optimization changes.",
+    impact: "high",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Enable-ComputerRestore -Drive 'C:\\' -ErrorAction SilentlyContinue; Checkpoint-Computer -Description 'NexusAI_PreOptimize' -RestorePointType 'MODIFY_SETTINGS'",
+    timeoutMs: 60000,
+  },
+  {
     id: "disable_diagtrack",
     category: "services",
     title: "Disable DiagTrack Telemetry Service",
@@ -32,6 +46,18 @@ const OPTIMIZATION_ACTIONS = [
     requiresAdmin: true,
     kind: "ps",
     command: "Stop-Service -Name 'DiagTrack' -ErrorAction SilentlyContinue; Set-Service -Name 'DiagTrack' -StartupType Disabled -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "disable_dmwappushservice",
+    category: "services",
+    title: "Disable Dmwappushservice",
+    description: "Stops and disables WAP push telemetry routing service.",
+    impact: "high",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Stop-Service -Name 'dmwappushservice' -ErrorAction SilentlyContinue; Set-Service -Name 'dmwappushservice' -StartupType Disabled -ErrorAction SilentlyContinue",
   },
   {
     id: "set_sysmain_manual",
@@ -56,6 +82,30 @@ const OPTIMIZATION_ACTIONS = [
     requiresAdmin: true,
     kind: "ps",
     command: "Set-Service -Name 'Spooler' -StartupType Manual -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "set_wsearch_manual",
+    category: "services",
+    title: "Set Windows Search Service to Manual",
+    description: "Reduces indexing overhead on systems where instant search is less important.",
+    impact: "medium",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Set-Service -Name 'WSearch' -StartupType Manual -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "disable_xbox_services",
+    category: "services",
+    title: "Disable Xbox Services",
+    description: "Disables Xbox background services when gaming integration is not needed.",
+    impact: "medium",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Get-Service -Name 'XblAuthManager','XblGameSave','XboxNetApiSvc','XboxGipSvc' -ErrorAction SilentlyContinue | ForEach-Object { Stop-Service -Name $_.Name -ErrorAction SilentlyContinue; Set-Service -Name $_.Name -StartupType Disabled -ErrorAction SilentlyContinue }",
   },
   {
     id: "disable_telemetry_policy",
@@ -92,6 +142,42 @@ const OPTIMIZATION_ACTIONS = [
     requiresAdmin: false,
     kind: "ps",
     command: "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications' -Name 'GlobalUserDisabled' -Type DWord -Value 1",
+  },
+  {
+    id: "disable_advertising_id",
+    category: "privacy",
+    title: "Disable Advertising ID",
+    description: "Prevents app ad tracking using user advertising ID.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo' -Name 'Enabled' -Type DWord -Value 0",
+  },
+  {
+    id: "disable_activity_history",
+    category: "privacy",
+    title: "Disable Activity History Collection",
+    description: "Turns off activity history publication and upload policies.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' -Name 'EnableActivityFeed' -Type DWord -Value 0; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' -Name 'PublishUserActivities' -Type DWord -Value 0; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' -Name 'UploadUserActivities' -Type DWord -Value 0",
+  },
+  {
+    id: "disable_location_tracking",
+    category: "privacy",
+    title: "Disable Location Tracking",
+    description: "Disables system location service policy.",
+    impact: "low",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\LocationAndSensors' -Name 'DisableLocation' -Type DWord -Value 1",
   },
   {
     id: "disable_startup_delay",
@@ -143,6 +229,56 @@ const OPTIMIZATION_ACTIONS = [
     internal: "remove_empty_folders",
   },
   {
+    id: "component_store_cleanup",
+    category: "cleanup",
+    title: "Run Component Store Cleanup (DISM)",
+    description: "Runs StartComponentCleanup to reclaim old Windows update components.",
+    impact: "medium",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Dism.exe /online /Cleanup-Image /StartComponentCleanup",
+    timeoutMs: 240000,
+  },
+  {
+    id: "clear_delivery_optimization_cache",
+    category: "cleanup",
+    title: "Clear Delivery Optimization Cache",
+    description: "Removes cached update delivery files.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Delete-DeliveryOptimizationCache -Force -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "empty_recycle_bin",
+    category: "cleanup",
+    title: "Empty Recycle Bin",
+    description: "Clears recycled files across all drives.",
+    impact: "low",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "Clear-RecycleBin -Force -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "trim_ssd",
+    category: "cleanup",
+    title: "Run SSD Retrim",
+    description: "Issues retrim for SSD volumes to improve long-term write performance.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Get-Volume | Where-Object { $_.DriveType -eq 'Fixed' -and $_.FileSystemLabel -ne $null } | ForEach-Object { Optimize-Volume -DriveLetter $_.DriveLetter -ReTrim -Verbose -ErrorAction SilentlyContinue }",
+    timeoutMs: 120000,
+  },
+  {
     id: "remove_menu_delay",
     category: "registry",
     title: "Remove Menu Show Delay",
@@ -153,6 +289,42 @@ const OPTIMIZATION_ACTIONS = [
     requiresAdmin: false,
     kind: "ps",
     command: "Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name 'MenuShowDelay' -Value '0' -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "set_visual_effects_best_performance",
+    category: "registry",
+    title: "Set Visual Effects to Best Performance",
+    description: "Disables heavy animations and visual effects for responsiveness.",
+    impact: "medium",
+    risk: "low",
+    recommended: false,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects' -Name 'VisualFXSetting' -Type DWord -Value 2 -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "disable_transparency_effects",
+    category: "registry",
+    title: "Disable Transparency Effects",
+    description: "Turns off transparency for lower GPU load and reduced latency.",
+    impact: "low",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize' -Name 'EnableTransparency' -Type DWord -Value 0 -ErrorAction SilentlyContinue",
+  },
+  {
+    id: "disable_game_dvr",
+    category: "registry",
+    title: "Disable Game DVR / Background Recording",
+    description: "Disables background game recording to reduce overhead.",
+    impact: "medium",
+    risk: "low",
+    recommended: true,
+    requiresAdmin: false,
+    kind: "ps",
+    command: "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR' -Name 'AppCaptureEnabled' -Type DWord -Value 0; New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR' -Name 'AllowGameDVR' -Type DWord -Value 0",
   },
   {
     id: "clean_broken_path_entries",
@@ -191,6 +363,30 @@ const OPTIMIZATION_ACTIONS = [
     command: "Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|vEthernet' } | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ServerAddresses @('1.1.1.1','1.0.0.1') -ErrorAction SilentlyContinue }",
   },
   {
+    id: "disable_network_throttling",
+    category: "network",
+    title: "Disable Network Throttling Index",
+    description: "Tweaks multimedia network throttling registry value for latency-sensitive workloads.",
+    impact: "medium",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "New-Item -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile' -Force | Out-Null; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile' -Name 'NetworkThrottlingIndex' -Type DWord -Value 4294967295",
+  },
+  {
+    id: "disable_nagle_algorithm",
+    category: "network",
+    title: "Disable Nagle Algorithm (TCPNoDelay)",
+    description: "Applies TCP ACK/Nagle latency tweak to active interfaces.",
+    impact: "medium",
+    risk: "high",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "$ifaces=Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces' -ErrorAction SilentlyContinue; foreach($i in $ifaces){New-ItemProperty -Path $i.PSPath -Name 'TcpAckFrequency' -Value 1 -PropertyType DWord -Force | Out-Null; New-ItemProperty -Path $i.PSPath -Name 'TCPNoDelay' -Value 1 -PropertyType DWord -Force | Out-Null}",
+  },
+  {
     id: "disable_windows_copilot",
     category: "features",
     title: "Disable Windows Copilot",
@@ -201,6 +397,54 @@ const OPTIMIZATION_ACTIONS = [
     requiresAdmin: false,
     kind: "ps",
     command: "New-Item -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot' -Force | Out-Null; Set-ItemProperty -Path 'HKCU:\\Software\\Policies\\Microsoft\\Windows\\WindowsCopilot' -Name 'TurnOffWindowsCopilot' -Type DWord -Value 1",
+  },
+  {
+    id: "set_ultimate_performance_power_plan",
+    category: "features",
+    title: "Enable Ultimate Performance Power Plan",
+    description: "Duplicates and activates Ultimate Performance plan (or high performance if unavailable).",
+    impact: "high",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 | Out-Null; $plan=(powercfg /list | Select-String -Pattern 'Ultimate Performance|High performance' | Select-Object -First 1).ToString(); if($plan){$guid=($plan -split ':')[1].Split('(')[0].Trim(); powercfg /setactive $guid}",
+  },
+  {
+    id: "disable_hibernation",
+    category: "features",
+    title: "Disable Hibernation",
+    description: "Turns off hibernation and frees hiberfil.sys disk space.",
+    impact: "medium",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "powercfg /h off",
+  },
+  {
+    id: "disable_fast_startup",
+    category: "features",
+    title: "Disable Fast Startup",
+    description: "Disables hybrid shutdown for cleaner boot cycles and fewer driver issues.",
+    impact: "low",
+    risk: "medium",
+    recommended: false,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power' -Name 'HiberbootEnabled' -Type DWord -Value 0",
+  },
+  {
+    id: "disable_telemetry_scheduled_tasks",
+    category: "features",
+    title: "Disable Telemetry Scheduled Tasks",
+    description: "Disables known CEIP and compatibility telemetry tasks.",
+    impact: "medium",
+    risk: "medium",
+    recommended: true,
+    requiresAdmin: true,
+    kind: "ps",
+    command: "$tasks=@('\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser','\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator','\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip','\\Microsoft\\Windows\\Autochk\\Proxy'); foreach($t in $tasks){$parts=$t.Trim('\\').Split('\\'); $name=$parts[-1]; $path='\\'+(($parts[0..($parts.Length-2)] -join '\\'))+'\\'; Disable-ScheduledTask -TaskName $name -TaskPath $path -ErrorAction SilentlyContinue | Out-Null}",
   },
 ];
 
@@ -911,7 +1155,7 @@ async function getStartupItems() {
 }
 
 async function getServiceStates() {
-  const cmd = "Get-Service -Name 'DiagTrack','SysMain','Spooler','bthserv','wuauserv' -ErrorAction SilentlyContinue | Select-Object Name,Status,StartType | ConvertTo-Json -Depth 3";
+  const cmd = "Get-Service -Name 'DiagTrack','dmwappushservice','SysMain','Spooler','bthserv','wuauserv','WSearch' -ErrorAction SilentlyContinue | Select-Object Name,Status,StartType | ConvertTo-Json -Depth 3";
   const result = await runPowerShell(cmd, 8000);
   if (!result.ok) {
     return [];
@@ -924,12 +1168,35 @@ async function getServiceStates() {
   }));
 }
 
+async function getCurrentPowerPlan() {
+  const result = await runPowerShell("powercfg /getactivescheme", 5000);
+  if (!result.ok) {
+    return "Unknown";
+  }
+  return result.stdout.trim() || "Unknown";
+}
+
+async function getTelemetryTaskSummary() {
+  const command = "$tasks=@('\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser','\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator','\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip','\\Microsoft\\Windows\\Autochk\\Proxy'); $out=@(); foreach($t in $tasks){$parts=$t.Trim('\\').Split('\\'); $name=$parts[-1]; $path='\\'+(($parts[0..($parts.Length-2)] -join '\\'))+'\\'; $task=Get-ScheduledTask -TaskName $name -TaskPath $path -ErrorAction SilentlyContinue; if($task){$out += [PSCustomObject]@{ Name=$t; State=$task.State; Enabled=$task.Settings.Enabled }}} $out | ConvertTo-Json -Depth 3";
+  const result = await runPowerShell(command, 8000);
+  if (!result.ok) {
+    return [];
+  }
+  return parseJsonOutput(result.stdout).map((row) => ({
+    name: row.Name,
+    state: row.State,
+    enabled: row.Enabled,
+  }));
+}
+
 async function getOptimizationInsights() {
-  const [admin, startup, services, junk] = await Promise.all([
+  const [admin, startup, services, junk, powerPlan, telemetryTasks] = await Promise.all([
     isAdmin(),
     getStartupItems(),
     getServiceStates(),
     scanJunk(),
+    getCurrentPowerPlan(),
+    getTelemetryTaskSummary(),
   ]);
 
   return {
@@ -937,6 +1204,8 @@ async function getOptimizationInsights() {
     admin,
     startup,
     services,
+    powerPlan,
+    telemetryTasks,
     junkSummary: {
       totalBytes: junk.totalBytes,
       tempBytes: junk.temp.totalBytes,

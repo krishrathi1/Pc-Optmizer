@@ -16,6 +16,9 @@ const batteryDetailGridEl = document.getElementById("batteryDetailGrid");
 const simulateRecommendedBtn = document.getElementById("simulateRecommended");
 const applyRecommendedBtn = document.getElementById("applyRecommended");
 const applySelectedBtn = document.getElementById("applySelected");
+const selectRecommendedBtn = document.getElementById("selectRecommended");
+const selectAllActionsBtn = document.getElementById("selectAllActions");
+const clearAllActionsBtn = document.getElementById("clearAllActions");
 const optimizerMetaEl = document.getElementById("optimizerMeta");
 const optimizerActionsEl = document.getElementById("optimizerActions");
 const optimizerInsightsEl = document.getElementById("optimizerInsights");
@@ -261,6 +264,11 @@ function renderOptimizerInsights(insights) {
   clearElement(optimizerInsightsEl);
   addListItem(
     optimizerInsightsEl,
+    "Active Power Plan",
+    insights.powerPlan || "Unknown"
+  );
+  addListItem(
+    optimizerInsightsEl,
     `Startup Items: ${insights.startup.totalCount}`,
     "Items loaded from Win32_StartupCommand"
   );
@@ -274,6 +282,13 @@ function renderOptimizerInsights(insights) {
       optimizerInsightsEl,
       `${service.name}: ${service.status}`,
       `Startup type: ${service.startType}`
+    );
+  }
+  for (const task of insights.telemetryTasks || []) {
+    addListItem(
+      optimizerInsightsEl,
+      `Task: ${task.name}`,
+      `State: ${task.state} | Enabled: ${task.enabled}`
     );
   }
   for (const startup of insights.startup.items.slice(0, 6)) {
@@ -298,6 +313,32 @@ function renderOptimizerResult(result) {
       `${item.title} -> ${item.status}`,
       item.message
     );
+  }
+}
+
+function setActionSelection(mode) {
+  const checks = optimizerActionsEl.querySelectorAll("input[data-action-id]");
+  if (!checks.length) {
+    return;
+  }
+
+  if (mode === "all") {
+    for (const check of checks) {
+      check.checked = true;
+    }
+    return;
+  }
+  if (mode === "none") {
+    for (const check of checks) {
+      check.checked = false;
+    }
+    return;
+  }
+  if (mode === "recommended" && optimizerCatalog) {
+    const rec = new Set(optimizerCatalog.safeProfileActionIds);
+    for (const check of checks) {
+      check.checked = rec.has(check.dataset.actionId);
+    }
   }
 }
 
@@ -536,6 +577,9 @@ runEmptyScanBtn.addEventListener("click", runEmptyFolderScan);
 simulateRecommendedBtn.addEventListener("click", simulateRecommendedPlan);
 applyRecommendedBtn.addEventListener("click", applyRecommendedPlan);
 applySelectedBtn.addEventListener("click", applySelectedPlan);
+selectRecommendedBtn.addEventListener("click", () => setActionSelection("recommended"));
+selectAllActionsBtn.addEventListener("click", () => setActionSelection("all"));
+clearAllActionsBtn.addEventListener("click", () => setActionSelection("none"));
 closeDetailsBtn.addEventListener("click", closeDetails);
 detailsOverlayEl.addEventListener("click", (event) => {
   if (event.target === detailsOverlayEl) {
